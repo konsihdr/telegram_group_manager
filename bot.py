@@ -124,6 +124,7 @@ async def bot_to_group_check(c, m):
         await app.answer_callback_query(m.id, text="Gruppe wurde Freigegeben")
         logging.info(f'group released from {m.from_user.id}')
         return
+        
 @app.on_message(filters.command("group_list", "/"))
 async def send_group_list(c, m):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
