@@ -2,12 +2,11 @@ import logging
 import os
 from datetime import datetime
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import filters
 from pyrogram.client import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy.orm import Session
-
+from sqlalchemy import or_
 from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -26,7 +25,9 @@ if os.environ['ADMIN_GROUP'] == "":
 else:
     admin_group=int(os.environ['ADMIN_GROUP'])
 
-scheduler = AsyncIOScheduler()
+@app.on_message(filters.command("start", "/"))
+async def start(c, m):
+    await m.reply_text(f"Hi, ich bin der DACH Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
 
 @app.on_message(filters.command("status", "/"))
 async def bot_status(c, m):
@@ -123,18 +124,27 @@ async def bot_to_group_check(c, m):
         await app.answer_callback_query(m.id, text="Gruppe wurde Freigegeben")
         logging.info(f'group released from {m.from_user.id}')
         return
-
 @app.on_message(filters.command("group_list", "/"))
 async def send_group_list(c, m):
-    reply_text = []
+    reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
+    
     with Session(engine) as s:
         active_groups = s.query(Groups).filter(Groups.group_active == True).order_by(Groups.group_name).all()
+        
         for group in active_groups:
-            if group.group_invite_link == "":
-                continue
-            else: 
-                reply_text.append(f"[{group.group_name}]({group.group_invite_link})")
-    await m.reply_text("\n".join(reply_text), disable_web_page_preview=True)
+            if group.group_invite_link:
+                reply_text.append(f"· [{group.group_name}]({group.group_invite_link})")
+
+    formatted_message = "\n".join(reply_text)
+
+    # Ensure the message doesn't exceed the maximum length allowed by Telegram
+    max_length = 4096
+    #TODO: seperate message if too long
+    if len(formatted_message) > max_length:
+        formatted_message = formatted_message[:max_length] + "\n..."
+
+    await m.reply_text(formatted_message, disable_web_page_preview=True)
+
 
 @app.on_message(filters.command("release", "/"))
 async def release_group(c, m):
@@ -151,6 +161,33 @@ async def release_group(c, m):
         ])
     )
 
+@app.on_message(filters.command("update_link", "/"))
+async def generate_new_link(c, m):
+    logging.info('starting generation of link >> generate_new_link')
+    current_group_id = m.chat.id  # Get the current group id
+
+    with Session(engine) as s:
+        # Check if the group exists and has no invite link
+        group = s.query(Groups).filter(
+            Groups.group_id == current_group_id,
+            or_(Groups.group_invite_link == "", Groups.group_invite_link.is_(None))
+        ).first() # Returns the first result or None
+
+        if group:
+            logging.info(f'checking link for {group.group_name} {group.group_id}')
+            member = await app.get_chat_member(current_group_id, "me")
+            if member.promoted_by:
+                x = await app.create_chat_invite_link(current_group_id)
+                group.group_invite_link = str(x.invite_link)
+                s.commit()
+                logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
+            else:
+                await app.send_message(current_group_id, text="Damit ich einen Invite Link für deine Gruppe erzeugen kann, benötige ich Adminrechte. Bitte füge mich als Admin hinzu.")
+        else:
+            logging.info(f'Group {current_group_id} not found or already has an invite link')
+            await app.send_message(current_group_id, text="Ich habe keine Gruppe mit dieser ID gefunden oder es gibt bereits einen Invite Link. Bitte wende dich an die Admins der DACH Gruppe.")
+
+    return
 
 async def get_invite_links():
     logging.info('starting job >> get_invite_links')
@@ -171,6 +208,4 @@ async def get_invite_links():
 if __name__ == "__main__":
     logging.info("Bot is Online")
     Base.metadata.create_all(engine)
-    scheduler.add_job(get_invite_links, "interval", minutes=10)
-    scheduler.start()
     app.run()
