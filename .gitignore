@@ -1,0 +1,5 @@
+.env
+.env.prod
+*.session
+*.db
+.DS_Store
