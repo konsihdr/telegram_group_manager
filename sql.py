@@ -19,6 +19,7 @@ class Groups(Base):
     group_deleted: Mapped[bool]
     group_invite_link: Mapped[str] = mapped_column(nullable=True)
     last_invite_check: Mapped[datetime.datetime] = mapped_column(nullable=True)
+    is_admin: Mapped[bool] = mapped_column(nullable=True, default=False)
 
 
 Base.metadata.create_all(engine)

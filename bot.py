@@ -20,6 +20,7 @@ app = Client(
 )
 
 bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+
 if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
 else:
@@ -51,10 +52,9 @@ async def me_invited_or_joined(c, m):
                 await app.leave_chat(m.chat.id)
                 return
             else:
-                with Session(engine) as session:
-                    new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
-                    session.add(new_group)
-                    session.commit()
+                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
+                s.add(new_group)
+                s.commit()
                 await c.send_message(
                     admin_group, 
                     f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
@@ -100,6 +100,7 @@ async def bot_to_group_check(c, m):
             results = s.query(Groups).filter_by(group_id=group_query).all()
             if results:
                 results[0].group_deleted = True
+                results[0].group_active = False
                 s.commit()
         await app.edit_message_reply_markup(
             m.message.chat.id, m.message.id,
@@ -189,6 +190,27 @@ async def generate_new_link(c, m):
             await app.send_message(current_group_id, text="Ich habe keine Gruppe mit dieser ID gefunden oder es gibt bereits einen Invite Link. Bitte wende dich an die Admins der DACH Gruppe.")
 
     return
+
+# Hier brauchen wir einen Filter für nur updates der permission
+@app.on_chat_member_updated()
+async def bot_promotion(c, m):
+    if m.new_chat_member.user.id == bot_id:
+        if m.new_chat_member.status == "ChatMemberStatus.ADMINISTRATOR":
+            with Session(engine) as s:
+                group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+                group.is_admin = True
+                s.commit()
+            await app.send_message(m.chat.id, text="Ich bin nun Admin, bitte führe nun /update_link aus")
+
+        if m.new_chat_member.status == "ChatMemberStatus.MEMBER":
+            with Session(engine) as s:
+                group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+                group.is_admin = False
+                s.commit()
+            await app.send_message(m.chat.id, text="Ich bin nun Member")
+        
+    return
+
 
 async def get_invite_links():
     logging.info('starting job >> get_invite_links')
