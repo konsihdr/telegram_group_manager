@@ -5,8 +5,6 @@
 ```python
 API_HASH=
 API_ID=
-BOT_LOG=
-BOT_ID=
 BOT_NAME=""
 BOT_TOKEN=
 ADMIN_GROUP=
@@ -24,3 +22,7 @@ vim .env
 ```
 docker compose up -d
 ```
+
+## Dev Notes
+
+https://docs.pyrogram.org/
