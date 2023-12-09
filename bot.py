@@ -20,50 +20,55 @@ app = Client(
     workdir="/db"
 )
 
-bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+if os.environ['BOT_TOKEN'] == "":
+    logging.info('Not Bot Token Provided')
+else:
+    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
 
 if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
 else:
     admin_group=int(os.environ['ADMIN_GROUP'])
 
-@app.on_message(filters.command("start", "/"))
+@app.on_message(filters.command("start"))
 async def start(c, m):
     await m.reply_text(f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
 
-@app.on_message(filters.command("status", "/"))
+@app.on_message(filters.command("status"))
 async def bot_status(c, m):
     await m.reply_text(f"{os.environ['BOT_NAME']} Online")
 
-@app.on_message(filters.command("id", "/"))
+@app.on_message(filters.command("id"))
 async def status(c, m):
-    await m.reply_text(m.chat.id)
+    await m.reply_text(f'<pre>{m.chat.id}</pre>')
 
 @app.on_message(filters.new_chat_members)
 async def me_invited_or_joined(c, m):
     if m.new_chat_members[0].id == bot_id:
         logging.info(f'bot added to group {m.chat.title} ({m.chat.id})')
-        logging.debug(m)
         now = datetime.now()
-        
+
         with Session(engine) as s:
-            results = s.query(Groups).filter_by(group_id=m.chat.id).filter_by(group_deleted=True).all()
-            if results:
-                await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist die {m.chat.id}")
-                await app.leave_chat(m.chat.id)
-                return
-            else:
-                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
-                s.add(new_group)
-                s.commit()
-                await c.send_message(
-                    admin_group, 
-                    f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
-                        InlineKeyboardButton("Ablehnen", callback_data=f'decline+{m.chat.id}')
-                    ]])
-                )
+            group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+            if group:
+                if group.group_deleted == True:
+                    await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist die {m.chat.id}")
+                    await app.leave_chat(m.chat.id)
+                    return
+                if group.group_deleted == False:
+                    return
+                else:
+                    new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
+                    s.add(new_group)
+                    s.commit()
+                    await c.send_message(
+                        admin_group, 
+                        f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
+                            InlineKeyboardButton("Ablehnen", callback_data=f'decline+{m.chat.id}')
+                        ]])
+                    )
         return
 
 @app.on_callback_query()
@@ -170,11 +175,10 @@ async def generate_new_link(c, m):
     current_group_id = m.chat.id  # Get the current group id
 
     with Session(engine) as s:
-        # Check if the group exists and has no invite link
         group = s.query(Groups).filter(
             Groups.group_id == current_group_id,
             or_(Groups.group_invite_link == "", Groups.group_invite_link.is_(None))
-        ).first() # Returns the first result or None
+        ).first()
 
         if group:
             logging.info(f'checking link for {group.group_name} {group.group_id}')
@@ -195,34 +199,27 @@ async def generate_new_link(c, m):
 
 @app.on_chat_member_updated()
 async def status_changed(c, m):
-    is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
+    is_bot_admin = lambda x: m.status is ChatMemberStatus.ADMINISTRATOR
     current_group_id = m.chat.id
 
     if not m.new_chat_member: return
     if not m.new_chat_member.user.is_self: return 
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
-        invite_link = await app.create_chat_invite_link(current_group_id)
-    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or is_bot_admin(m.old_chat_member)):
+        invite_link_object = await app.create_chat_invite_link(current_group_id)
+        logging.info(f'Bot Status changed >> ADMIN = {promoted}')
+    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER} and (m.old_chat_member or is_bot_admin(m.old_chat_member)):
         promoted = False
-    elif m.new_chat_member.status is ChatMemberStatus.BANNED:
-        promoted = None
+        logging.info(f'Bot Status changed >> ADMIN = {promoted}')
     else: return
-
-    if promoted is None:
-        with Session(engine) as s:
-            result = s.query(Groups).filter_by(group_id=current_group_id).first()
-            if result:
-                s.delete(result)
-                s.commit()
-        return
 
     with Session(engine) as s:
         group = s.query(Groups).filter_by(group_id=m.chat.id).first()
         group.is_admin = bool(promoted)
-        group.group_invite_link = invite_link
+        if promoted:
+            group.group_invite_link = invite_link_object.invite_link
         s.commit()
-    logging.info(f'Bot Status changed >> {is_bot_admin}')
+        return
 
 
 if __name__ == "__main__":
