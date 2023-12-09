@@ -7,7 +7,7 @@ from pyrogram.client import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.enums import ChatMemberStatus
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -29,6 +29,9 @@ if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
 else:
     admin_group=int(os.environ['ADMIN_GROUP'])
+
+allowed_users = os.environ['ALLOWED_USERS']
+is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
 
 @app.on_message(filters.command("start"))
 async def start(c, m):
@@ -57,18 +60,18 @@ async def me_invited_or_joined(c, m):
                     return
                 if group.group_deleted == False:
                     return
-                else:
-                    new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
-                    s.add(new_group)
-                    s.commit()
-                    await c.send_message(
-                        admin_group, 
-                        f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
-                            InlineKeyboardButton("Ablehnen", callback_data=f'decline+{m.chat.id}')
-                        ]])
-                    )
+            else:
+                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
+                s.add(new_group)
+                s.commit()
+                await c.send_message(
+                    admin_group, 
+                    f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
+                        InlineKeyboardButton("Ablehnen", callback_data=f'decline+{m.chat.id}')
+                    ]])
+                )
         return
 
 @app.on_callback_query()
@@ -137,7 +140,7 @@ async def send_group_list(c, m):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
     
     with Session(engine) as s:
-        active_groups = s.query(Groups).filter(Groups.group_active == True).order_by(Groups.group_name).all()
+        active_groups = s.query(Groups).filter(and_(Groups.group_active == True, Groups.group_invite_link != "")).order_by(Groups.group_name).all()
         
         for group in active_groups:
             if group.group_invite_link:
@@ -168,6 +171,17 @@ async def release_group(c, m):
             keyboardMarkup,
         ])
     )
+    return
+
+@app.on_message(filters.command("info") & filters.user(allowed_users))
+async def send_info_to_groups(c, m):
+    info_text = m.text
+    info_text = info_text.replace("/info", "")
+    with Session(engine) as s:
+        active_groups = s.query(Groups).filter(Groups.group_active == True).order_by(Groups.group_name).all()
+        for group in active_groups:
+            await app.send_message(group.group_id, info_text)
+    return
 
 @app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
@@ -199,16 +213,15 @@ async def generate_new_link(c, m):
 
 @app.on_chat_member_updated()
 async def status_changed(c, m):
-    is_bot_admin = lambda x: m.status is ChatMemberStatus.ADMINISTRATOR
     current_group_id = m.chat.id
-
+    
     if not m.new_chat_member: return
     if not m.new_chat_member.user.is_self: return 
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
         invite_link_object = await app.create_chat_invite_link(current_group_id)
         logging.info(f'Bot Status changed >> ADMIN = {promoted}')
-    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER} and (m.old_chat_member or is_bot_admin(m.old_chat_member)):
+    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
         promoted = False
         logging.info(f'Bot Status changed >> ADMIN = {promoted}')
     else: return
