@@ -5,6 +5,7 @@ from datetime import datetime
 from pyrogram import filters
 from pyrogram.client import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.enums import ChatMemberStatus
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sql import Base, Groups, engine
@@ -28,7 +29,7 @@ else:
 
 @app.on_message(filters.command("start", "/"))
 async def start(c, m):
-    await m.reply_text(f"Hi, ich bin der DACH Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+    await m.reply_text(f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
 
 @app.on_message(filters.command("status", "/"))
 async def bot_status(c, m):
@@ -126,7 +127,7 @@ async def bot_to_group_check(c, m):
         logging.info(f'group released from {m.from_user.id}')
         return
         
-@app.on_message(filters.command("group_list", "/"))
+@app.on_message(filters.command("group_list"))
 async def send_group_list(c, m):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
     
@@ -148,7 +149,7 @@ async def send_group_list(c, m):
     await m.reply_text(formatted_message, disable_web_page_preview=True)
 
 
-@app.on_message(filters.command("release", "/"))
+@app.on_message(filters.command("release"))
 async def release_group(c, m):
     keyboardMarkup = []
     with Session(engine) as s:
@@ -163,7 +164,7 @@ async def release_group(c, m):
         ])
     )
 
-@app.on_message(filters.command("update_link", "/"))
+@app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = m.chat.id  # Get the current group id
@@ -191,41 +192,37 @@ async def generate_new_link(c, m):
 
     return
 
-# Hier brauchen wir einen Filter für nur updates der permission
+
 @app.on_chat_member_updated()
-async def bot_promotion(c, m):
-    if m.new_chat_member.user.id == bot_id:
-        if m.new_chat_member.status == "ChatMemberStatus.ADMINISTRATOR":
-            with Session(engine) as s:
-                group = s.query(Groups).filter_by(group_id=m.chat.id).first()
-                group.is_admin = True
-                s.commit()
-            await app.send_message(m.chat.id, text="Ich bin nun Admin, bitte führe nun /update_link aus")
+async def status_changed(c, m):
+    is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
+    current_group_id = m.chat.id
 
-        if m.new_chat_member.status == "ChatMemberStatus.MEMBER":
-            with Session(engine) as s:
-                group = s.query(Groups).filter_by(group_id=m.chat.id).first()
-                group.is_admin = False
-                s.commit()
-            await app.send_message(m.chat.id, text="Ich bin nun Member")
-        
-    return
+    if not m.new_chat_member: return
+    if not m.new_chat_member.user.is_self: return 
+    if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
+        promoted = True
+        invite_link = await app.create_chat_invite_link(current_group_id)
+    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or is_bot_admin(m.old_chat_member)):
+        promoted = False
+    elif m.new_chat_member.status is ChatMemberStatus.BANNED:
+        promoted = None
+    else: return
 
-
-async def get_invite_links():
-    logging.info('starting job >> get_invite_links')
-    with Session(engine) as s:
-        groups = s.query(Groups).filter(Groups.group_invite_link == "").all()
-        for group in groups:
-            logging.info(f'no link for {group.group_name} {group.group_id}')
-            member = await app.get_chat_member(group.group_id, "me")
-            if member.promoted_by:
-                x = await app.create_chat_invite_link(group.group_id)
-                group.group_invite_link = str(x.invite_link)
+    if promoted is None:
+        with Session(engine) as s:
+            result = s.query(Groups).filter_by(group_id=current_group_id).first()
+            if result:
+                s.delete(result)
                 s.commit()
-            else:
-                await app.send_message(group.group_id, text="Damit ich einen Invite Link für deine Grupper erzeugen kann, benötige ich Admin rechte. Bitte füge mich als Admin hinzu.")
         return
+
+    with Session(engine) as s:
+        group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+        group.is_admin = bool(promoted)
+        group.group_invite_link = invite_link
+        s.commit()
+    logging.info(f'Bot Status changed >> {is_bot_admin}')
 
 
 if __name__ == "__main__":
