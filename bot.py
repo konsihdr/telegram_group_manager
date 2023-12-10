@@ -5,8 +5,9 @@ from datetime import datetime
 from pyrogram import filters
 from pyrogram.client import Client
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.enums import ChatMemberStatus
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -19,42 +20,51 @@ app = Client(
     workdir="/db"
 )
 
-bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+if os.environ['BOT_TOKEN'] == "":
+    logging.info('Not Bot Token Provided')
+else:
+    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+
 if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
 else:
     admin_group=int(os.environ['ADMIN_GROUP'])
 
-@app.on_message(filters.command("start", "/"))
-async def start(c, m):
-    await m.reply_text(f"Hi, ich bin der DACH Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+allowed_users = list(map(int, os.environ['ALLOWED_USERS'].split(',')))
 
-@app.on_message(filters.command("status", "/"))
+is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
+
+@app.on_message(filters.command("start"))
+async def start(c, m):
+    await m.reply_text(f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+
+@app.on_message(filters.command("status"))
 async def bot_status(c, m):
     await m.reply_text(f"{os.environ['BOT_NAME']} Online")
 
-@app.on_message(filters.command("id", "/"))
+@app.on_message(filters.command("id"))
 async def status(c, m):
-    await m.reply_text(m.chat.id)
+    await m.reply_text(f'<pre>{m.chat.id}</pre>')
 
 @app.on_message(filters.new_chat_members)
 async def me_invited_or_joined(c, m):
     if m.new_chat_members[0].id == bot_id:
         logging.info(f'bot added to group {m.chat.title} ({m.chat.id})')
-        logging.debug(m)
         now = datetime.now()
-        
+
         with Session(engine) as s:
-            results = s.query(Groups).filter_by(group_id=m.chat.id).filter_by(group_deleted=True).all()
-            if results:
-                await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist die {m.chat.id}")
-                await app.leave_chat(m.chat.id)
-                return
+            group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+            if group:
+                if group.group_deleted == True:
+                    await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist die {m.chat.id}")
+                    await app.leave_chat(m.chat.id)
+                    return
+                if group.group_deleted == False:
+                    return
             else:
-                with Session(engine) as session:
-                    new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
-                    session.add(new_group)
-                    session.commit()
+                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
+                s.add(new_group)
+                s.commit()
                 await c.send_message(
                     admin_group, 
                     f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
@@ -100,6 +110,7 @@ async def bot_to_group_check(c, m):
             results = s.query(Groups).filter_by(group_id=group_query).all()
             if results:
                 results[0].group_deleted = True
+                results[0].group_active = False
                 s.commit()
         await app.edit_message_reply_markup(
             m.message.chat.id, m.message.id,
@@ -125,12 +136,12 @@ async def bot_to_group_check(c, m):
         logging.info(f'group released from {m.from_user.id}')
         return
         
-@app.on_message(filters.command("group_list", "/"))
+@app.on_message(filters.command("group_list"))
 async def send_group_list(c, m):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
     
     with Session(engine) as s:
-        active_groups = s.query(Groups).filter(Groups.group_active == True).order_by(Groups.group_name).all()
+        active_groups = s.query(Groups).filter(and_(Groups.group_active == True, Groups.group_invite_link != "")).order_by(Groups.group_name).all()
         
         for group in active_groups:
             if group.group_invite_link:
@@ -147,7 +158,7 @@ async def send_group_list(c, m):
     await m.reply_text(formatted_message, disable_web_page_preview=True)
 
 
-@app.on_message(filters.command("release", "/"))
+@app.on_message(filters.command("release"))
 async def release_group(c, m):
     keyboardMarkup = []
     with Session(engine) as s:
@@ -161,18 +172,18 @@ async def release_group(c, m):
             keyboardMarkup,
         ])
     )
+    return
 
-@app.on_message(filters.command("update_link", "/"))
+@app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = m.chat.id  # Get the current group id
 
     with Session(engine) as s:
-        # Check if the group exists and has no invite link
         group = s.query(Groups).filter(
             Groups.group_id == current_group_id,
             or_(Groups.group_invite_link == "", Groups.group_invite_link.is_(None))
-        ).first() # Returns the first result or None
+        ).first()
 
         if group:
             logging.info(f'checking link for {group.group_name} {group.group_id}')
@@ -190,19 +201,28 @@ async def generate_new_link(c, m):
 
     return
 
-async def get_invite_links():
-    logging.info('starting job >> get_invite_links')
+
+@app.on_chat_member_updated()
+async def status_changed(c, m):
+    current_group_id = m.chat.id
+    
+    if not m.new_chat_member: return
+    if not m.new_chat_member.user.is_self: return 
+    if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
+        promoted = True
+        invite_link_object = await app.create_chat_invite_link(current_group_id)
+        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
+    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
+        promoted = False
+        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
+    else: return
+
     with Session(engine) as s:
-        groups = s.query(Groups).filter(Groups.group_invite_link == "").all()
-        for group in groups:
-            logging.info(f'no link for {group.group_name} {group.group_id}')
-            member = await app.get_chat_member(group.group_id, "me")
-            if member.promoted_by:
-                x = await app.create_chat_invite_link(group.group_id)
-                group.group_invite_link = str(x.invite_link)
-                s.commit()
-            else:
-                await app.send_message(group.group_id, text="Damit ich einen Invite Link für deine Grupper erzeugen kann, benötige ich Admin rechte. Bitte füge mich als Admin hinzu.")
+        group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+        group.is_admin = bool(promoted)
+        if promoted:
+            group.group_invite_link = invite_link_object.invite_link
+        s.commit()
         return
 
 
