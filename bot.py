@@ -30,7 +30,8 @@ if os.environ['ADMIN_GROUP'] == "":
 else:
     admin_group=int(os.environ['ADMIN_GROUP'])
 
-allowed_users = os.environ['ALLOWED_USERS']
+allowed_users = list(map(int, os.environ['ALLOWED_USERS'].split(',')))
+
 is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
 
 @app.on_message(filters.command("start"))
@@ -173,8 +174,9 @@ async def release_group(c, m):
     )
     return
 
-@app.on_message(filters.command("info") & filters.user(allowed_users))
+@app.on_message(filters.command("info") and filters.user(allowed_users))
 async def send_info_to_groups(c, m):
+    logging.info(f'New Info message send by {m.from_user.first_name} - {m.from_user.id}')
     info_text = m.text
     info_text = info_text.replace("/info", "")
     with Session(engine) as s:
@@ -220,10 +222,10 @@ async def status_changed(c, m):
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
         invite_link_object = await app.create_chat_invite_link(current_group_id)
-        logging.info(f'Bot Status changed >> ADMIN = {promoted}')
+        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
     elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
         promoted = False
-        logging.info(f'Bot Status changed >> ADMIN = {promoted}')
+        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
     else: return
 
     with Session(engine) as s:
@@ -237,5 +239,7 @@ async def status_changed(c, m):
 
 if __name__ == "__main__":
     logging.info("Bot is Online")
+    print(allowed_users)
+    print(type(allowed_users))
     Base.metadata.create_all(engine)
     app.run()
