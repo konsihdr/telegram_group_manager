@@ -174,17 +174,6 @@ async def release_group(c, m):
     )
     return
 
-@app.on_message(filters.command("info") and filters.user(allowed_users))
-async def send_info_to_groups(c, m):
-    logging.info(f'New Info message send by {m.from_user.first_name} - {m.from_user.id}')
-    info_text = m.text
-    info_text = info_text.replace("/info", "")
-    with Session(engine) as s:
-        active_groups = s.query(Groups).filter(Groups.group_active == True).order_by(Groups.group_name).all()
-        for group in active_groups:
-            await app.send_message(group.group_id, info_text)
-    return
-
 @app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
     logging.info('starting generation of link >> generate_new_link')
@@ -239,7 +228,5 @@ async def status_changed(c, m):
 
 if __name__ == "__main__":
     logging.info("Bot is Online")
-    print(allowed_users)
-    print(type(allowed_users))
     Base.metadata.create_all(engine)
     app.run()
