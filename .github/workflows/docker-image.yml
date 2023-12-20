@@ -1,28 +1,23 @@
-name: Build and Push Docker Image
-
+name: Deploy Images to GHCR
 on:
   push:
     branches:
       - main
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
+      push-store-image:
+        runs-on: ubuntu-latest
+        steps:
+          - name: 'Checkout GitHub Action'
+            uses: actions/checkout@main
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+          - name: 'Login to GitHub Container Registry'
+            uses: docker/login-action@v1
+            with:
+              registry: ghcr.io
+              username: ${{github.actor}}
+              password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: Set up Docker
-        uses: docker/setup-docker@v2
-        with:
-          dockerfile: Dockerfile
-
-      - name: Build the Docker image
-        run: docker build -t ${{ github.repository }}:latest .
-
-      - name: Log in to GitHub Container Registry
-        run: echo ${{ secrets.TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Push the Docker image
-        run: docker push ghcr.io/${{ github.repository }}:latest
+          - name: 'Build Inventory Image'
+            run: |
+              docker build . --tag ghcr.io/konsihdr/telegram_group_manager:latest
+              docker push ghcr.io/konsihdr/telegram_group_manager:latest
