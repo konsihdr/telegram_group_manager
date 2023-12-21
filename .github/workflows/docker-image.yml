@@ -5,6 +5,7 @@ on:
       - main
 jobs:
       push-store-image:
+        permissions: write-all
         runs-on: ubuntu-latest
         steps:
           - name: 'Checkout GitHub Action'
@@ -18,7 +19,6 @@ jobs:
               password: ${{secrets.GITHUB_TOKEN}}
 
           - name: 'Build Inventory Image'
-            permissions: write-all
             run: |
               docker build . --tag ghcr.io/konsihdr/telegram_group_manager:latest
               docker push ghcr.io/konsihdr/telegram_group_manager:latest
