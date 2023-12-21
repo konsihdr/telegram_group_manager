@@ -20,5 +20,6 @@ jobs:
 
           - name: 'Build Inventory Image'
             run: |
+              docker buildx create --use
               docker buildx build --platform=linux/amd64,linux/arm64,linux/arm/v7 --tag ghcr.io/konsihdr/telegram_group_manager:latest .
               docker push ghcr.io/konsihdr/telegram_group_manager:latest
