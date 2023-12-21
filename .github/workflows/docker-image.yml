@@ -18,7 +18,7 @@ jobs:
               username: ${{github.actor}}
               password: ${{secrets.GITHUB_TOKEN}}
 
-          - name: 'Build Inventory Image'
+          - name: 'Build and Push Bot Image'
             run: |
               docker buildx create --use
               docker buildx build --platform=linux/amd64,linux/arm64,linux/arm/v7 --tag ghcr.io/konsihdr/telegram_group_manager:latest .
