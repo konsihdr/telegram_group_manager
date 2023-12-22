@@ -1,7 +1,8 @@
 version: '3.3'
 services:
   bot:
-    build: .
+    #build: .
+    image: ghcr.io/konsihdr/telegram_group_manager:latest
     restart: always
     env_file: .env
     volumes:
