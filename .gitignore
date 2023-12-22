@@ -3,3 +3,5 @@
 *.session
 *.db
 .DS_Store
+__pycache__
+.devcontainer
