@@ -12,6 +12,12 @@ from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
+if os.environ['BOT_TOKEN'] == "":
+    logging.info('Not Bot Token Provided')
+    exit()
+else:
+    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+
 app = Client(
     os.environ['BOT_NAME'],
     api_id=os.environ['API_ID'],
@@ -19,11 +25,6 @@ app = Client(
     bot_token=os.environ['BOT_TOKEN'],
     workdir="/db"
 )
-
-if os.environ['BOT_TOKEN'] == "":
-    logging.info('Not Bot Token Provided')
-else:
-    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
 
 if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
@@ -210,7 +211,6 @@ async def status_changed(c, m):
     if not m.new_chat_member.user.is_self: return 
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
-        invite_link_object = await app.create_chat_invite_link(current_group_id)
         logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
     elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
         promoted = False
@@ -221,6 +221,7 @@ async def status_changed(c, m):
         group = s.query(Groups).filter_by(group_id=m.chat.id).first()
         group.is_admin = bool(promoted)
         if promoted:
+            invite_link_object = await app.create_chat_invite_link(current_group_id)
             group.group_invite_link = invite_link_object.invite_link
         s.commit()
         return
