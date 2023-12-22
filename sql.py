@@ -21,5 +21,5 @@ class Groups(Base):
     last_invite_check: Mapped[datetime.datetime] = mapped_column(nullable=True)
     is_admin: Mapped[bool] = mapped_column(nullable=True, default=False)
 
-
-Base.metadata.create_all(engine)
+if __name__ == "__main__":
+    Base.metadata.create_all(engine)
