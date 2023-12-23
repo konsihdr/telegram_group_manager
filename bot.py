@@ -103,7 +103,8 @@ async def bot_to_group_check(c, m):
         if public_group.username == None:
             member = await app.get_chat_member(group_query, "me")
             if not member.promoted_by:
-                await app.send_message(group_query, text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser Gruppe mitglied sein. Danke!")
+                await app.send_message(group_query, text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser Gruppe mitglied sein.")
+                return
         with Session(engine) as s:
             group = s.query(Groups).filter(Groups.group_id == group_query).first()
             group.group_invite_link = str(f'https://t.me/{public_group.username}')
