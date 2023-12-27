@@ -12,12 +12,16 @@ async def force_update_link():
     with Session(engine) as s:
         groups = s.query(Groups).all()
         for group in groups:
-            public_group = await app.get_chat(group.group_id)
-            if public_group.username == None:
-                logging.info(f'Not able to generate Link for {group.group_id} | {group.group_name}')
+            if group:
+                public_group = await app.get_chat(group.group_id)
+                if public_group.username == None:
+                    logging.info(f'Not able to generate Link for {group.group_id} | {group.group_name}')
+                else:
+                    group.group_invite_link = str(f'https://t.me/{public_group.username}')
+                    s.commit()
+                    logging.info(f'Found Link for {group.group_id} | {group.group_name} | https://t.me/{public_group.username}')
             else:
-                group.group_invite_link = str(f'https://t.me/{public_group.username}')
-                s.commit()
+                logging.info(f'Group Not Found {group.group_id} | {group.group_name}')
     return
 
 async def main():
