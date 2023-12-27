@@ -12,8 +12,8 @@ async def force_update_link():
     with Session(engine) as s:
         groups = s.query(Groups).all()
         for group in groups:
-            if group:
-                public_group = await app.get_chat(group.group_id)
+            public_group = await app.get_chat(group.group_id)
+            if public_group:
                 if public_group.username == None:
                     logging.info(f'Not able to generate Link for {group.group_id} | {group.group_name}')
                 else:
