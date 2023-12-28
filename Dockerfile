@@ -8,6 +8,7 @@ WORKDIR /app
 COPY bot.py /app
 COPY sql.py /app
 COPY requirements.txt /app
+COPY force_update_links.py /app
 RUN mkdir /db
 
 # Installiere die Python-Pakete aus requirements.txt

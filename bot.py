@@ -12,6 +12,12 @@ from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
+if os.environ['BOT_TOKEN'] == "":
+    logging.info('Not Bot Token Provided')
+    exit()
+else:
+    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+
 app = Client(
     os.environ['BOT_NAME'],
     api_id=os.environ['API_ID'],
@@ -19,11 +25,6 @@ app = Client(
     bot_token=os.environ['BOT_TOKEN'],
     workdir="/db"
 )
-
-if os.environ['BOT_TOKEN'] == "":
-    logging.info('Not Bot Token Provided')
-else:
-    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
 
 if os.environ['ADMIN_GROUP'] == "":
     admin_group=None
@@ -98,10 +99,17 @@ async def bot_to_group_check(c, m):
             InlineKeyboardMarkup([[
                 InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]]))
         await app.answer_callback_query(m.id, text="Gruppe wurde hinzugefügt")
+        public_group = await app.get_chat(group_query)
+        if public_group.username == None:
+            member = await app.get_chat_member(group_query, "me")
+            if not member.promoted_by:
+                await app.send_message(group_query, text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser Gruppe mitglied sein.")
+                return
+        with Session(engine) as s:
+            group = s.query(Groups).filter(Groups.group_id == group_query).first()
+            group.group_invite_link = str(f'https://t.me/{public_group.username}')
+            s.commit()
         await app.send_message(group_query, text="Danke, deine Gruppe wurde angenommen und ist nun auf der DACH Liste zu finden.")
-        member = await app.get_chat_member(group_query, "me")
-        if not member.promoted_by:
-            await app.send_message(group_query, text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser Gruppe mitglied sein. Danke!")
         logging.info(f'request accepted from {m.from_user.id}')
         return
     
@@ -180,24 +188,26 @@ async def generate_new_link(c, m):
     current_group_id = m.chat.id  # Get the current group id
 
     with Session(engine) as s:
-        group = s.query(Groups).filter(
-            Groups.group_id == current_group_id,
-            or_(Groups.group_invite_link == "", Groups.group_invite_link.is_(None))
-        ).first()
-
-        if group:
-            logging.info(f'checking link for {group.group_name} {group.group_id}')
-            member = await app.get_chat_member(current_group_id, "me")
-            if member.promoted_by:
-                x = await app.create_chat_invite_link(current_group_id)
-                group.group_invite_link = str(x.invite_link)
+        group = s.query(Groups).filter(Groups.group_id == current_group_id,).first()
+        member = await app.get_chat_member(current_group_id, "me")
+        if member.promoted_by:
+            x = await app.create_chat_invite_link(current_group_id)
+            group.group_invite_link = str(x.invite_link)
+            s.commit()
+            logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
+            await m.reply_text("✅")
+        elif not member.promoted_by:
+            public_group = await app.get_chat(current_group_id)
+            if public_group.username == None:
+                await m.reply_text("Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin rechte.")
+            else:
+                group.group_invite_link = str(f'https://t.me/{public_group.username}')
                 s.commit()
                 logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
-            else:
-                await app.send_message(current_group_id, text="Damit ich einen Invite Link für deine Gruppe erzeugen kann, benötige ich Adminrechte. Bitte füge mich als Admin hinzu.")
+                await m.reply_text("✅")
         else:
-            logging.info(f'Group {current_group_id} not found or already has an invite link')
-            await app.send_message(current_group_id, text="Ich habe keine Gruppe mit dieser ID gefunden oder es gibt bereits einen Invite Link. Bitte wende dich an die Admins der DACH Gruppe.")
+            logging.error(f'Invite link update for {group.group_name}.')
+            await m.reply_text("❌")
 
     return
 
@@ -210,7 +220,6 @@ async def status_changed(c, m):
     if not m.new_chat_member.user.is_self: return 
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
-        invite_link_object = await app.create_chat_invite_link(current_group_id)
         logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
     elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
         promoted = False
@@ -221,6 +230,7 @@ async def status_changed(c, m):
         group = s.query(Groups).filter_by(group_id=m.chat.id).first()
         group.is_admin = bool(promoted)
         if promoted:
+            invite_link_object = await app.create_chat_invite_link(current_group_id)
             group.group_invite_link = invite_link_object.invite_link
         s.commit()
         return
