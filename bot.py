@@ -4,10 +4,11 @@ from datetime import datetime
 
 from pyrogram import filters
 from pyrogram.client import Client
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.enums import ChatMemberStatus
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+
 from sql import Base, Groups, engine
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -16,7 +17,7 @@ if os.environ['BOT_TOKEN'] == "":
     logging.info('Not Bot Token Provided')
     exit()
 else:
-    bot_id=int(os.environ['BOT_TOKEN'].split(":")[0])
+    bot_id = int(os.environ['BOT_TOKEN'].split(":")[0])
 
 app = Client(
     os.environ['BOT_NAME'],
@@ -27,25 +28,34 @@ app = Client(
 )
 
 if os.environ['ADMIN_GROUP'] == "":
-    admin_group=None
+    admin_group = None
 else:
-    admin_group=int(os.environ['ADMIN_GROUP'])
+    admin_group = int(os.environ['ADMIN_GROUP'])
 
 allowed_users = list(map(int, os.environ['ALLOWED_USERS'].split(',')))
 
-is_bot_admin = lambda x: x.status is ChatMemberStatus.ADMINISTRATOR
+
+def is_bot_admin(x):
+    return x.status is ChatMemberStatus.ADMINISTRATOR
+
 
 @app.on_message(filters.command("start"))
 async def start(c, m):
-    await m.reply_text(f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+    await m.reply_text(
+        f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner "
+        f"Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen "
+        f"kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+
 
 @app.on_message(filters.command("status"))
 async def bot_status(c, m):
     await m.reply_text(f"{os.environ['BOT_NAME']} Online")
 
+
 @app.on_message(filters.command("id"))
 async def status(c, m):
     await m.reply_text(f'<pre>{m.chat.id}</pre>')
+
 
 @app.on_message(filters.new_chat_members)
 async def me_invited_or_joined(c, m):
@@ -56,18 +66,21 @@ async def me_invited_or_joined(c, m):
         with Session(engine) as s:
             group = s.query(Groups).filter_by(group_id=m.chat.id).first()
             if group:
-                if group.group_deleted == True:
-                    await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist die {m.chat.id}")
+                if group.group_deleted:
+                    await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein "
+                                                           f"Problem. Bitte wende dich an die Admins der DACH Gruppe."
+                                                           f" Deine ID ist die {m.chat.id}")
                     await app.leave_chat(m.chat.id)
                     return
-                if group.group_deleted == False:
+                if not group.group_deleted:
                     return
             else:
-                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
+                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False,
+                                   group_deleted=False, group_invite_link="")
                 s.add(new_group)
                 s.commit()
                 await c.send_message(
-                    admin_group, 
+                    admin_group,
                     f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
@@ -75,6 +88,7 @@ async def me_invited_or_joined(c, m):
                     ]])
                 )
         return
+
 
 @app.on_callback_query()
 async def bot_to_group_check(c, m):
@@ -84,7 +98,7 @@ async def bot_to_group_check(c, m):
     if m.data == "ok":
         await app.answer_callback_query(m.id, text="Keine Aktion durchgeführt")
         return
-    
+
     group_query = int(m.data.split('+')[1])
     answer = str(m.data.split('+')[0])
 
@@ -100,19 +114,22 @@ async def bot_to_group_check(c, m):
                 InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]]))
         await app.answer_callback_query(m.id, text="Gruppe wurde hinzugefügt")
         public_group = await app.get_chat(group_query)
-        if public_group.username == None:
+        if public_group.username is None:
             member = await app.get_chat_member(group_query, "me")
             if not member.promoted_by:
-                await app.send_message(group_query, text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser Gruppe mitglied sein.")
+                await app.send_message(group_query,
+                                       text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser "
+                                            "Gruppe mitglied sein.")
                 return
         with Session(engine) as s:
             group = s.query(Groups).filter(Groups.group_id == group_query).first()
             group.group_invite_link = str(f'https://t.me/{public_group.username}')
             s.commit()
-        await app.send_message(group_query, text="Danke, deine Gruppe wurde angenommen und ist nun auf der DACH Liste zu finden.")
+        await app.send_message(group_query,
+                               text="Danke, deine Gruppe wurde angenommen und ist nun auf der DACH Liste zu finden.")
         logging.info(f'request accepted from {m.from_user.id}')
         return
-    
+
     if answer == "decline":
         with Session(engine) as s:
             results = s.query(Groups).filter_by(group_id=group_query).all()
@@ -123,13 +140,13 @@ async def bot_to_group_check(c, m):
         await app.edit_message_reply_markup(
             m.message.chat.id, m.message.id,
             InlineKeyboardMarkup([[
-                InlineKeyboardButton("Abgehlent - annehmen?", callback_data=f"release+{group_query}")]]))
+                InlineKeyboardButton("Abgelehnt - annehmen?", callback_data=f"release+{group_query}")]]))
         await app.answer_callback_query(m.id, text="Gruppe wurde abgehlent")
         await app.send_message(group_query, text="Tut mir leid, deine Gruppe wurde abgelehnt")
         await app.leave_chat(group_query)
         logging.info(f'request declined from {m.from_user.id}')
         return
-    
+
     if answer == "release":
         with Session(engine) as s:
             result = s.query(Groups).filter_by(group_id=group_query).first()
@@ -143,14 +160,16 @@ async def bot_to_group_check(c, m):
         await app.answer_callback_query(m.id, text="Gruppe wurde Freigegeben")
         logging.info(f'group released from {m.from_user.id}')
         return
-        
+
+
 @app.on_message(filters.command("group_list"))
 async def send_group_list(c, m):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
-    
+
     with Session(engine) as s:
-        active_groups = s.query(Groups).filter(and_(Groups.group_active == True, Groups.group_invite_link != "")).order_by(Groups.group_name).all()
-        
+        active_groups = s.query(Groups).filter(
+            and_(Groups.group_active, Groups.group_invite_link != "")).order_by(Groups.group_name).all()
+
         for group in active_groups:
             if group.group_invite_link:
                 reply_text.append(f"· [{group.group_name}]({group.group_invite_link})")
@@ -159,10 +178,15 @@ async def send_group_list(c, m):
 
     # Ensure the message doesn't exceed the maximum length allowed by Telegram
     max_length = 4096
-    #TODO: seperate message if too long
-    if len(formatted_message) > max_length:
-        formatted_message = formatted_message[:max_length] + "\n..."
 
+    # If the message is too long, split it into multiple messages
+    while len(formatted_message) > max_length:
+        split_index = formatted_message.rfind('\n', 0, max_length)
+        part_message = formatted_message[:split_index]
+        formatted_message = formatted_message[split_index + 1:]
+        await m.reply_text(part_message, disable_web_page_preview=True)
+
+    # Send the remaining part
     await m.reply_text(formatted_message, disable_web_page_preview=True)
 
 
@@ -170,11 +194,12 @@ async def send_group_list(c, m):
 async def release_group(c, m):
     keyboardMarkup = []
     with Session(engine) as s:
-        deleted_groups = s.query(Groups).filter(Groups.group_deleted == True).all()
+        deleted_groups = s.query(Groups).filter(Groups.group_deleted).all()
         for group in deleted_groups:
-            keyboardMarkup.append(InlineKeyboardButton(f"{group.group_name}", callback_data=f'release+{group.group_id}'))
+            keyboardMarkup.append(
+                InlineKeyboardButton(f"{group.group_name}", callback_data=f'release+{group.group_id}'))
     await c.send_message(
-        admin_group, 
+        admin_group,
         "Welche gruppe möchtest du Releasen?",
         reply_markup=InlineKeyboardMarkup([
             keyboardMarkup,
@@ -182,13 +207,14 @@ async def release_group(c, m):
     )
     return
 
+
 @app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = m.chat.id  # Get the current group id
 
     with Session(engine) as s:
-        group = s.query(Groups).filter(Groups.group_id == current_group_id,).first()
+        group = s.query(Groups).filter(Groups.group_id == current_group_id, ).first()
         member = await app.get_chat_member(current_group_id, "me")
         if member.promoted_by:
             x = await app.create_chat_invite_link(current_group_id)
@@ -198,7 +224,7 @@ async def generate_new_link(c, m):
             await m.reply_text("✅")
         elif not member.promoted_by:
             public_group = await app.get_chat(current_group_id)
-            if public_group.username == None:
+            if public_group.username is None:
                 await m.reply_text("Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin rechte.")
             else:
                 group.group_invite_link = str(f'https://t.me/{public_group.username}')
@@ -215,16 +241,20 @@ async def generate_new_link(c, m):
 @app.on_chat_member_updated()
 async def status_changed(c, m):
     current_group_id = m.chat.id
-    
-    if not m.new_chat_member: return
-    if not m.new_chat_member.user.is_self: return 
+
+    if not m.new_chat_member:
+        return
+    if not m.new_chat_member.user.is_self:
+        return
     if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
         promoted = True
         logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
-    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
+    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (
+            m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
         promoted = False
         logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
-    else: return
+    else:
+        return
 
     with Session(engine) as s:
         group = s.query(Groups).filter_by(group_id=m.chat.id).first()
