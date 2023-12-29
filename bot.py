@@ -116,7 +116,7 @@ async def bot_to_group_check(c, m):
         await app.edit_message_reply_markup(
             m.message.chat.id, m.message.id,
             InlineKeyboardMarkup([[
-                InlineKeyboardButton("Abgehlent - annehmen?", callback_data=f"release+{group_query}")]]))
+                InlineKeyboardButton("Abgehlent - Freigeben?", callback_data=f"release+{group_query}")]]))
         await app.answer_callback_query(m.id, text="Gruppe wurde abgehlent")
         await app.send_message(group_query, text="Tut mir leid, deine Gruppe wurde abgelehnt")
         await app.leave_chat(group_query)
@@ -132,7 +132,7 @@ async def bot_to_group_check(c, m):
         await app.edit_message_reply_markup(
             m.message.chat.id, m.message.id,
             InlineKeyboardMarkup([[
-                InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]]))
+                InlineKeyboardButton("Freigegeben", callback_data=f"ok")]]))
         await app.answer_callback_query(m.id, text="Gruppe wurde Freigegeben")
         logging.info(f'group released from {m.from_user.id}')
         return
