@@ -49,6 +49,5 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          registry: ghcr.io
           push: true
-          tags: ghcr.io/${{ steps.meta.outputs.tags }}
+          tags: ghcr.io/${{ steps.meta.outputs.tags }}, ghcr.io/konsihdr/telegram_group_manager:latest
