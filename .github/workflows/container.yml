@@ -30,7 +30,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: konsihdr/telegram_group_manager
+          images: ghcr.io/konsihdr/telegram_group_manager
     
 
       - name: Build and push
