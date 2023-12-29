@@ -59,6 +59,17 @@ async def status(c, m):
 
 @app.on_message(filters.new_chat_members)
 async def me_invited_or_joined(c, m):
+    """
+    Asynchroner Handler für das 'new_chat_members' Ereignis.
+
+    Dieser Handler wird ausgelöst, wenn neue Mitglieder einem Chat beitreten.
+    Es überprüft insbesondere, ob der Bot zu einer Gruppe hinzugefügt wurde.
+    Wenn dies der Fall ist, wird ein Eintrag für die Gruppe in der Datenbank erstellt
+    und eine Anfrage zur Genehmigung an die Admin-Gruppe gesendet.
+
+    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+    :param m: Das Message-Objekt, das Daten über das Ereignis enthält.
+    """
     if m.new_chat_members[0].id == bot_id:
         logging.info(f'bot added to group {m.chat.title} ({m.chat.id})')
         now = datetime.now()
@@ -92,6 +103,17 @@ async def me_invited_or_joined(c, m):
 
 @app.on_callback_query()
 async def bot_to_group_check(c, m):
+    """
+    Asynchroner Handler für das 'on_callback_query' Ereignis.
+
+    Dieser Handler wird ausgelöst, wenn eine Callback-Abfrage empfangen wird.
+    Die Funktion überprüft die Daten des Callbacks und führt je nach Dateninhalt verschiedene Aktionen aus.
+    Diese können das Akzeptieren, Ablehnen oder Freigeben einer Gruppe sein. Bei jeder Aktion wird der
+    Status der Gruppe in der Datenbank aktualisiert und eine Benachrichtigung an die Gruppe gesendet.
+
+    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+    :param m: Das CallbackQuery-Objekt, das Daten über das Callback-Ereignis enthält.
+    """
     logging.info(f'got new callback {m.data}')
     logging.debug(m)
 
@@ -164,6 +186,15 @@ async def bot_to_group_check(c, m):
 
 @app.on_message(filters.command("group_list"))
 async def send_group_list(c, m):
+    """
+       Dieser Handler wird aktiviert, wenn der "/group_list" Befehl empfangen wird.
+       Er erstellt und sendet eine Liste von aktiven Gruppennamen und deren Einladungslinks.
+       Wenn die Gesamtlänge der Nachricht 4096 Zeichen (das Maximum, das von Telegram erlaubt ist) überschreitet,
+       wird die Nachricht in mehrere Teile geteilt und in mehreren Nachrichten gesendet.
+
+       :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+       :param m: Die empfangene Nachricht, die den "/group_list" Befehl enthält.
+       """
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
 
     with Session(engine) as s:
@@ -192,6 +223,17 @@ async def send_group_list(c, m):
 
 @app.on_message(filters.command("release"))
 async def release_group(c, m):
+    """
+    Asynchroner Handler für den "/release" Befehl.
+
+    Dieser Handler wird aktiviert, wenn eine Nachricht mit dem "/release" Befehl empfangen wird.
+    Die Funktion zieht gelöschte Gruppen aus der Datenbank und erstellt eine Inline-Tastatur mit den
+    Namen dieser Gruppen als Schaltflächen. Diese Tastatur wird dann in einer gesendeten Nachricht angezeigt,
+    die fragt, welche Gruppe freigegeben werden soll.
+
+    :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+    :param m: Die empfangene Nachricht, die den "/group_list" Befehl enthält.
+    """
     keyboardMarkup = []
     with Session(engine) as s:
         deleted_groups = s.query(Groups).filter(Groups.group_deleted).all()
@@ -210,6 +252,18 @@ async def release_group(c, m):
 
 @app.on_message(filters.command("update_link"))
 async def generate_new_link(c, m):
+    """
+    Asynchroner Handler für den "/update_link" Befehl.
+
+    Dieser Handler wird ausgelöst, wenn eine Nachricht mit dem "/update_link" Befehl empfangen wird.
+    Er aktualisiert den Einladungslink für die aktuelle Gruppe. Wenn der Bot Adminrechte in der Gruppe hat,
+    erstellt er einen neuen Einladungslink. Wenn der Bot keine Adminrechte hat, aber die Gruppe öffentlich ist,
+    setzt er den Einladungslink auf den Standard-Telegram-Pfad für öffentliche Gruppen.
+    Die Ergebnisse werden in der Datenbank gespeichert.
+
+    :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+    :param m: Die empfangene Nachricht, die den "/update_link" Befehl enthält.
+    """
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = m.chat.id  # Get the current group id
 
@@ -240,6 +294,17 @@ async def generate_new_link(c, m):
 
 @app.on_chat_member_updated()
 async def status_changed(c, m):
+    """
+    Asynchroner Handler für das 'on_chat_member_updated' Ereignis.
+
+    Dieser Handler wird ausgelöst, wenn sich der Status eines Mitglieds in einem Chat ändert.
+    Insbesondere überwacht es, ob der Bot zum Administrator befördert oder von den Administratorrechten entfernt wurde.
+    Bei einer Beförderung erstellt der Bot einen neuen Einladungslink für die Gruppe und speichert ihn in der Datenbank.
+    Wenn der Bot seine Administratorrechte verliert, wird der Status in der Datenbank entsprechend aktualisiert.
+
+    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
+    :param m: Das ChatMemberUpdated-Objekt, das Daten über das Ereignis enthält.
+    """
     current_group_id = m.chat.id
 
     if not m.new_chat_member:
