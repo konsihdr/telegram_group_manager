@@ -2,30 +2,20 @@ import logging
 import os
 from datetime import datetime
 
-from pyrogram import filters
-from pyrogram.client import Client
-from pyrogram.enums import ChatMemberStatus
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from sql import Base, Groups, engine
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, filters, CallbackContext, MessageHandler, \
+    CallbackQueryHandler
+from telegram.constants import ParseMode
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
 if os.environ['BOT_TOKEN'] == "":
     logging.info('Not Bot Token Provided')
     exit()
-else:
-    bot_id = int(os.environ['BOT_TOKEN'].split(":")[0])
-
-app = Client(
-    os.environ['BOT_NAME'],
-    api_id=os.environ['API_ID'],
-    api_hash=os.environ['API_HASH'],
-    bot_token=os.environ['BOT_TOKEN'],
-    workdir="/db"
-)
 
 if os.environ['ADMIN_GROUP'] == "":
     admin_group = None
@@ -35,94 +25,74 @@ else:
 allowed_users = list(map(int, os.environ['ALLOWED_USERS'].split(',')))
 
 
-def is_bot_admin(x):
-    return x.status is ChatMemberStatus.ADMINISTRATOR
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text="Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu "
+                                        "verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen "
+                                        "Link senden, mit dem du deine Gruppe auf die DACH Liste setzen kannst. Wenn "
+                                        "du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
 
 
-@app.on_message(filters.command("start"))
-async def start(c, m):
-    await m.reply_text(
-        f"Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu verwalten. Wenn du mich in deiner "
-        f"Gruppe hinzufügst, werde ich dir einen Link senden, mit dem du deine Gruppe auf die DACH Liste setzen "
-        f"kannst. Wenn du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
+async def bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{os.environ['BOT_NAME']} Online")
 
 
-@app.on_message(filters.command("status"))
-async def bot_status(c, m):
-    await m.reply_text(f"{os.environ['BOT_NAME']} Online")
+app = ApplicationBuilder().token(os.environ['BOT_TOKEN']).build()
 
 
-@app.on_message(filters.command("id"))
-async def status(c, m):
-    await m.reply_text(f'<pre>{m.chat.id}</pre>')
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f'<pre>{update.effective_chat.id}</pre>',
+                                   parse_mode=ParseMode.HTML)
 
 
-@app.on_message(filters.new_chat_members)
-async def me_invited_or_joined(c, m):
-    """
-    Asynchroner Handler für das 'new_chat_members' Ereignis.
+async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_members = update.message.new_chat_members
 
-    Dieser Handler wird ausgelöst, wenn neue Mitglieder einem Chat beitreten.
-    Es überprüft insbesondere, ob der Bot zu einer Gruppe hinzugefügt wurde.
-    Wenn dies der Fall ist, wird ein Eintrag für die Gruppe in der Datenbank erstellt
-    und eine Anfrage zur Genehmigung an die Admin-Gruppe gesendet.
-
-    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-    :param m: Das Message-Objekt, das Daten über das Ereignis enthält.
-    """
-    if m.new_chat_members[0].id == bot_id:
-        logging.info(f'bot added to group {m.chat.title} ({m.chat.id})')
+    if context.bot.id in [member.id for member in new_members]:
+        # Bot was added to a group
+        logging.info(f'bot added to group {update.effective_chat.title} ({update.effective_chat.id})')
         now = datetime.now()
 
         with Session(engine) as s:
-            group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+            group = s.query(Groups).filter_by(group_id=update.effective_chat.id).first()
             if group:
                 if group.group_deleted:
-                    await app.send_message(m.chat.id, text=f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein "
-                                                           f"Problem. Bitte wende dich an die Admins der DACH Gruppe."
-                                                           f" Deine ID ist die {m.chat.id}")
-                    await app.leave_chat(m.chat.id)
+                    await update.message.reply_text(f"Oh Oh, deine Gruppe ist schon bekannt und es gibt ein Problem. "
+                                                    f"Bitte wende dich an die Admins der DACH Gruppe. Deine ID ist "
+                                                    f"die {update.effective_chat.id}")
+                    await context.bot.leave_chat(update.effective_chat.id)
                     return
                 if not group.group_deleted:
                     return
             else:
-                new_group = Groups(group_name=m.chat.title, group_id=m.chat.id, group_joined=now, group_active=False,
-                                   group_deleted=False, group_invite_link="")
+                new_group = Groups(group_name=update.effective_chat.title, group_id=update.effective_chat.id,
+                                   group_joined=now, group_active=False, group_deleted=False, group_invite_link="")
                 s.add(new_group)
                 s.commit()
-                await c.send_message(
+                await context.bot.send_message(
                     admin_group,
-                    f"Neue Gruppe Meldet sich an: {m.chat.title} ({m.chat.id})",
+                    f"Neue Gruppe Meldet sich an: {update.effective_chat.title} ({update.effective_chat.id})",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("Zulassen", callback_data=f'accept+{m.chat.id}'),
-                        InlineKeyboardButton("Ablehnen", callback_data=f'decline+{m.chat.id}')
+                        InlineKeyboardButton("Zulassen", callback_data=f'accept+{update.effective_chat.id}'),
+                        InlineKeyboardButton("Ablehnen", callback_data=f'decline+{update.effective_chat.id}')
                     ]])
                 )
         return
 
 
-@app.on_callback_query()
-async def bot_to_group_check(c, m):
-    """
-    Asynchroner Handler für das 'on_callback_query' Ereignis.
+async def bot_to_group_check(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
 
-    Dieser Handler wird ausgelöst, wenn eine Callback-Abfrage empfangen wird.
-    Die Funktion überprüft die Daten des Callbacks und führt je nach Dateninhalt verschiedene Aktionen aus.
-    Diese können das Akzeptieren, Ablehnen oder Freigeben einer Gruppe sein. Bei jeder Aktion wird der
-    Status der Gruppe in der Datenbank aktualisiert und eine Benachrichtigung an die Gruppe gesendet.
+    logging.info(f'got new callback {query.data}')
+    logging.debug(query)
 
-    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-    :param m: Das CallbackQuery-Objekt, das Daten über das Callback-Ereignis enthält.
-    """
-    logging.info(f'got new callback {m.data}')
-    logging.debug(m)
-
-    if m.data == "ok":
-        await app.answer_callback_query(m.id, text="Keine Aktion durchgeführt")
+    if query.data == "ok":
+        await context.bot.answer_callback_query(query.id, text="Keine Aktion durchgeführt")
         return
 
-    group_query = int(m.data.split('+')[1])
-    answer = str(m.data.split('+')[0])
+    group_query = int(query.data.split('+')[1])
+    answer = str(query.data.split('+')[0])
 
     if answer == "accept":
         with Session(engine) as s:
@@ -130,27 +100,34 @@ async def bot_to_group_check(c, m):
             if results:
                 results[0].group_active = True
                 s.commit()
-        await app.edit_message_reply_markup(
-            m.message.chat.id, m.message.id,
-            InlineKeyboardMarkup([[
-                InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]]))
-        await app.answer_callback_query(m.id, text="Gruppe wurde hinzugefügt")
-        public_group = await app.get_chat(group_query)
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]])
+
+        json_keyboard = reply_markup.to_json()
+
+        await context.bot.edit_message_reply_markup(
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            reply_markup=reply_markup
+        )
+        await context.bot.answer_callback_query(query.id, text="Gruppe wurde hinzugefügt")
+
+        public_group = await context.bot.get_chat(group_query)
         if public_group.username is None:
-            member = await app.get_chat_member(group_query, "me")
-            if not member.promoted_by:
-                await app.send_message(group_query,
-                                       text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in dieser "
-                                            "Gruppe mitglied sein.")
+            member = await context.bot.get_chat_member(group_query, context.bot.id)
+            if member.status != 'administrator':
+                await context.bot.send_message(group_query,
+                                               text="Übrigens, damit ich richtig funktioniere, muss ich als Admin in "
+                                                    "dieser Gruppe mitglied sein.")
                 return
         with Session(engine) as s:
             group = s.query(Groups).filter(Groups.group_id == group_query).first()
             group.group_invite_link = str(f'https://t.me/{public_group.username}')
             s.commit()
-        await app.send_message(group_query,
-                               text="Danke, deine Gruppe wurde angenommen und ist nun auf der DACH Liste zu finden.")
-        logging.info(f'request accepted from {m.from_user.id}')
-        return
+        await context.bot.send_message(group_query,
+                                       text="Danke, deine Gruppe wurde angenommen und ist nun auf der DACH Liste zu "
+                                            "finden.")
+        logging.info(f'request accepted from {query.from_user.id}')
 
     if answer == "decline":
         with Session(engine) as s:
@@ -159,15 +136,18 @@ async def bot_to_group_check(c, m):
                 results[0].group_deleted = True
                 results[0].group_active = False
                 s.commit()
-        await app.edit_message_reply_markup(
-            m.message.chat.id, m.message.id,
-            InlineKeyboardMarkup([[
-                InlineKeyboardButton("Abgelehnt - annehmen?", callback_data=f"release+{group_query}")]]))
-        await app.answer_callback_query(m.id, text="Gruppe wurde abgehlent")
-        await app.send_message(group_query, text="Tut mir leid, deine Gruppe wurde abgelehnt")
-        await app.leave_chat(group_query)
-        logging.info(f'request declined from {m.from_user.id}')
-        return
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Abgelehnt - annehmen?", callback_data=f"release+{group_query}")]])
+
+        await context.bot.edit_message_reply_markup(
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            reply_markup=reply_markup
+        )
+        await context.bot.answer_callback_query(query.id, text="Gruppe wurde abgelehnt")
+        await context.bot.send_message(group_query, text="Tut mir leid, deine Gruppe wurde abgelehnt")
+        await context.bot.leave_chat(group_query)
+        logging.info(f'request declined from {query.from_user.id}')
 
     if answer == "release":
         with Session(engine) as s:
@@ -175,26 +155,20 @@ async def bot_to_group_check(c, m):
             if result:
                 s.delete(result)
                 s.commit()
-        await app.edit_message_reply_markup(
-            m.message.chat.id, m.message.id,
-            InlineKeyboardMarkup([[
-                InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]]))
-        await app.answer_callback_query(m.id, text="Gruppe wurde Freigegeben")
-        logging.info(f'group released from {m.from_user.id}')
-        return
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]])
+
+        await context.bot.edit_message_reply_markup(
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            reply_markup=reply_markup
+        )
+        await context.bot.answer_callback_query(query.id, text="Gruppe wurde freigegeben")
+        logging.info(f'group released from {query.from_user.id}')
+    return
 
 
-@app.on_message(filters.command("group_list"))
-async def send_group_list(c, m):
-    """
-       Dieser Handler wird aktiviert, wenn der "/group_list" Befehl empfangen wird.
-       Er erstellt und sendet eine Liste von aktiven Gruppennamen und deren Einladungslinks.
-       Wenn die Gesamtlänge der Nachricht 4096 Zeichen (das Maximum, das von Telegram erlaubt ist) überschreitet,
-       wird die Nachricht in mehrere Teile geteilt und in mehreren Nachrichten gesendet.
-
-       :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-       :param m: Die empfangene Nachricht, die den "/group_list" Befehl enthält.
-       """
+async def send_group_list(update: Update, context: CallbackContext):
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
 
     with Session(engine) as s:
@@ -215,123 +189,109 @@ async def send_group_list(c, m):
         split_index = formatted_message.rfind('\n', 0, max_length)
         part_message = formatted_message[:split_index]
         formatted_message = formatted_message[split_index + 1:]
-        await m.reply_text(part_message, disable_web_page_preview=True)
+        await context.bot.send_message(update.effective_chat.id, part_message, disable_web_page_preview=True,
+                                       parse_mode='Markdown')
 
     # Send the remaining part
-    await m.reply_text(formatted_message, disable_web_page_preview=True)
+    await context.bot.send_message(update.effective_chat.id, formatted_message, disable_web_page_preview=True,
+                                   parse_mode='Markdown')
 
 
-@app.on_message(filters.command("release"))
-async def release_group(c, m):
-    """
-    Asynchroner Handler für den "/release" Befehl.
-
-    Dieser Handler wird aktiviert, wenn eine Nachricht mit dem "/release" Befehl empfangen wird.
-    Die Funktion zieht gelöschte Gruppen aus der Datenbank und erstellt eine Inline-Tastatur mit den
-    Namen dieser Gruppen als Schaltflächen. Diese Tastatur wird dann in einer gesendeten Nachricht angezeigt,
-    die fragt, welche Gruppe freigegeben werden soll.
-
-    :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-    :param m: Die empfangene Nachricht, die den "/group_list" Befehl enthält.
-    """
+async def release_group(update: Update, context: CallbackContext):
     keyboardMarkup = []
     with Session(engine) as s:
         deleted_groups = s.query(Groups).filter(Groups.group_deleted).all()
         for group in deleted_groups:
             keyboardMarkup.append(
-                InlineKeyboardButton(f"{group.group_name}", callback_data=f'release+{group.group_id}'))
-    await c.send_message(
+                [InlineKeyboardButton(f"{group.group_name}", callback_data=f'release+{group.group_id}')])
+
+    await context.bot.send_message(
         admin_group,
-        "Welche gruppe möchtest du Releasen?",
-        reply_markup=InlineKeyboardMarkup([
-            keyboardMarkup,
-        ])
+        "Welche Gruppe möchtest du freigeben?",
+        reply_markup=InlineKeyboardMarkup(keyboardMarkup)
     )
     return
 
 
-@app.on_message(filters.command("update_link"))
-async def generate_new_link(c, m):
-    """
-    Asynchroner Handler für den "/update_link" Befehl.
-
-    Dieser Handler wird ausgelöst, wenn eine Nachricht mit dem "/update_link" Befehl empfangen wird.
-    Er aktualisiert den Einladungslink für die aktuelle Gruppe. Wenn der Bot Adminrechte in der Gruppe hat,
-    erstellt er einen neuen Einladungslink. Wenn der Bot keine Adminrechte hat, aber die Gruppe öffentlich ist,
-    setzt er den Einladungslink auf den Standard-Telegram-Pfad für öffentliche Gruppen.
-    Die Ergebnisse werden in der Datenbank gespeichert.
-
-    :param c: Der Kontext des Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-    :param m: Die empfangene Nachricht, die den "/update_link" Befehl enthält.
-    """
+async def generate_new_link(update: Update, context: CallbackContext):
     logging.info('starting generation of link >> generate_new_link')
-    current_group_id = m.chat.id  # Get the current group id
+    current_group_id = update.effective_chat.id  # Get the current group id
 
     with Session(engine) as s:
-        group = s.query(Groups).filter(Groups.group_id == current_group_id, ).first()
-        member = await app.get_chat_member(current_group_id, "me")
-        if member.promoted_by:
-            x = await app.create_chat_invite_link(current_group_id)
-            group.group_invite_link = str(x.invite_link)
+        group = s.query(Groups).filter(Groups.group_id == current_group_id).first()
+        member = await context.bot.get_chat_member(current_group_id, context.bot.id)
+        if member.status == 'administrator':
+            x = await context.bot.export_chat_invite_link(current_group_id)
+            group.group_invite_link = str(x)
             s.commit()
             logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
-            await m.reply_text("✅")
-        elif not member.promoted_by:
-            public_group = await app.get_chat(current_group_id)
+            await context.bot.send_message(current_group_id, "✅")
+        elif member.status != 'administrator':
+            public_group = await context.bot.get_chat(current_group_id)
             if public_group.username is None:
-                await m.reply_text("Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin rechte.")
+                await context.bot.send_message(current_group_id,
+                                               "Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin rechte.")
             else:
                 group.group_invite_link = str(f'https://t.me/{public_group.username}')
                 s.commit()
                 logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
-                await m.reply_text("✅")
+                await context.bot.send_message(current_group_id, "✅")
         else:
             logging.error(f'Invite link update for {group.group_name}.')
-            await m.reply_text("❌")
-
+            await context.bot.send_message(current_group_id, "❌")
     return
 
 
-@app.on_chat_member_updated()
-async def status_changed(c, m):
-    """
-    Asynchroner Handler für das 'on_chat_member_updated' Ereignis.
+def is_bot_admin(chat_member: ChatMember):
+    return chat_member.status in {ChatMember.ADMINISTRATOR, ChatMember.OWNER}
 
-    Dieser Handler wird ausgelöst, wenn sich der Status eines Mitglieds in einem Chat ändert.
-    Insbesondere überwacht es, ob der Bot zum Administrator befördert oder von den Administratorrechten entfernt wurde.
-    Bei einer Beförderung erstellt der Bot einen neuen Einladungslink für die Gruppe und speichert ihn in der Datenbank.
-    Wenn der Bot seine Administratorrechte verliert, wird der Status in der Datenbank entsprechend aktualisiert.
 
-    :param c: Der Kontext des Event-Handlers, enthält Daten zum aktuellen Zustand der Pyrogram Session.
-    :param m: Das ChatMemberUpdated-Objekt, das Daten über das Ereignis enthält.
-    """
-    current_group_id = m.chat.id
+async def status_changed(update: Update, context: CallbackContext):
+    current_group_id = update.effective_chat.id
 
-    if not m.new_chat_member:
+    if not update.my_chat_member:
         return
-    if not m.new_chat_member.user.is_self:
+    if not update.my_chat_member.new_chat_member.user.is_bot:
         return
-    if is_bot_admin(m.new_chat_member) and (not m.old_chat_member or not is_bot_admin(m.old_chat_member)):
+
+    promoted = False
+    if is_bot_admin(update.my_chat_member.new_chat_member) and (
+            not update.my_chat_member.old_chat_member or not is_bot_admin(update.my_chat_member.old_chat_member)):
         promoted = True
-        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
-    elif m.new_chat_member.status in {ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED} and (
-            m.old_chat_member or (m.old_chat_member and is_bot_admin(m.old_chat_member))):
+    elif update.my_chat_member.new_chat_member.status in {ChatMember.MEMBER, ChatMember.RESTRICTED} and (
+            update.my_chat_member.old_chat_member or (
+            update.my_chat_member.old_chat_member and is_bot_admin(update.my_chat_member.old_chat_member))):
         promoted = False
-        logging.info(f'Bot Status changed {current_group_id} >> ADMIN = {promoted}')
     else:
         return
 
     with Session(engine) as s:
-        group = s.query(Groups).filter_by(group_id=m.chat.id).first()
+        group = s.query(Groups).filter_by(group_id=current_group_id).first()
         group.is_admin = bool(promoted)
         if promoted:
-            invite_link_object = await app.create_chat_invite_link(current_group_id)
-            group.group_invite_link = invite_link_object.invite_link
+            invite_link_object = await context.bot.export_chat_invite_link(current_group_id)
+            group.group_invite_link = invite_link_object
         s.commit()
-        return
+
+    return
+
+
+def main():
+    logging.info("Bot is Online")
+    Base.metadata.create_all(engine)
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", bot_status))
+    app.add_handler(CommandHandler('id', get_chat_id))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, me_invited_or_joined))
+    app.add_handler(CommandHandler("group_list", send_group_list))
+    app.add_handler(CallbackQueryHandler(bot_to_group_check))
+    app.add_handler(CommandHandler("release", release_group))
+    app.add_handler(CommandHandler("update_link", generate_new_link))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, status_changed))
+
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    logging.info("Bot is Online")
-    Base.metadata.create_all(engine)
-    app.run()
+    main()
