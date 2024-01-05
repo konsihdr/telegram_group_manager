@@ -22,8 +22,6 @@ if os.environ['ADMIN_GROUP'] == "":
 else:
     admin_group = int(os.environ['ADMIN_GROUP'])
 
-allowed_users = list(map(int, os.environ['ALLOWED_USERS'].split(',')))
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id,
