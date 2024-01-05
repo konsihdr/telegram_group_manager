@@ -154,7 +154,7 @@ async def bot_to_group_check(update: Update, context: CallbackContext):
                 s.delete(result)
                 s.commit()
         reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Angenommen - ablehnen?", callback_data=f"decline+{group_query}")]])
+            [[InlineKeyboardButton("Released", callback_data="ok")]])
 
         await context.bot.edit_message_reply_markup(
             chat_id=query.message.chat.id,
