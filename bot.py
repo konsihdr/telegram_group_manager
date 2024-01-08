@@ -1,5 +1,8 @@
+import html
+import json
 import logging
 import os
+import traceback
 from datetime import datetime
 
 from sqlalchemy import and_
@@ -8,10 +11,12 @@ from sqlalchemy.orm import Session
 from sql import Base, Groups, engine
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, filters, CallbackContext, MessageHandler, \
-    CallbackQueryHandler
+    CallbackQueryHandler, AIORateLimiter
 from telegram.constants import ParseMode
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+
+logger = logging.getLogger(__name__)
 
 if os.environ['BOT_TOKEN'] == "":
     logging.info('Not Bot Token Provided')
@@ -23,7 +28,7 @@ else:
     admin_group = int(os.environ['ADMIN_GROUP'])
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text="Hi, ich bin der DACH  List Bot. Ich bin dafür da, um die DACH Gruppen zu "
                                         "verwalten. Wenn du mich in deiner Gruppe hinzufügst, werde ich dir einen "
@@ -31,19 +36,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                         "du Fragen hast, wende dich bitte an die Admins der DACH Gruppe.")
 
 
-async def bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def bot_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"{os.environ['BOT_NAME']} Online")
 
 
-app = ApplicationBuilder().token(os.environ['BOT_TOKEN']).build()
+app = ApplicationBuilder().token(os.environ['BOT_TOKEN']).rate_limiter(AIORateLimiter()).build()
 
 
-async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f'<pre>{update.effective_chat.id}</pre>',
                                    parse_mode=ParseMode.HTML)
 
 
-async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     new_members = update.message.new_chat_members
 
     if context.bot.id in [member.id for member in new_members]:
@@ -78,7 +83,7 @@ async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
 
-async def bot_to_group_check(update: Update, context: CallbackContext):
+async def bot_to_group_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
@@ -166,7 +171,7 @@ async def bot_to_group_check(update: Update, context: CallbackContext):
     return
 
 
-async def send_group_list(update: Update, context: CallbackContext):
+async def send_group_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
 
     with Session(engine) as s:
@@ -195,7 +200,7 @@ async def send_group_list(update: Update, context: CallbackContext):
                                    parse_mode='Markdown')
 
 
-async def release_group(update: Update, context: CallbackContext):
+async def release_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboardMarkup = []
     with Session(engine) as s:
         deleted_groups = s.query(Groups).filter(Groups.group_deleted).all()
@@ -211,7 +216,7 @@ async def release_group(update: Update, context: CallbackContext):
     return
 
 
-async def generate_new_link(update: Update, context: CallbackContext):
+async def generate_new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = update.effective_chat.id  # Get the current group id
 
@@ -244,7 +249,7 @@ def is_bot_admin(chat_member: ChatMember):
     return chat_member.status in {ChatMember.ADMINISTRATOR, ChatMember.OWNER}
 
 
-async def status_changed(update: Update, context: CallbackContext):
+async def status_changed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_group_id = update.effective_chat.id
 
     if not update.my_chat_member:
@@ -274,6 +279,35 @@ async def status_changed(update: Update, context: CallbackContext):
     return
 
 
+DEVELOPER_CHAT_ID = -1002005123500
+
+
+async def error_handler(update: object, context: CallbackContext) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    # Log the error before we do anything else, so we can see it even if something breaks.
+    logger.error(msg="Exception while handling an update:", exc_info=context.error)
+
+    # traceback.format_exception returns the usual python message about an exception, but as a
+    # list of strings rather than a single string, so we have to join them together.
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = ''.join(tb_list)
+
+    # Build the message with some markup and additional information about what happened.
+    # You might need to add some logic to deal with messages longer than the 4096 character limit.
+    update_str = update.to_dict() if isinstance(update, Update) else str(update)
+    message = (
+        f'An exception was raised while handling an update\n'
+        f'<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}'
+        '</pre>\n\n'
+        f'<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n'
+        f'<pre>context.user_data = {html.escape(str(context.user_data))}</pre>\n\n'
+        f'<pre>{html.escape(tb_string)}</pre>'
+    )
+
+    # Finally, send the message
+    await context.bot.send_message(chat_id=DEVELOPER_CHAT_ID, text=message, parse_mode=ParseMode.HTML)
+
+
 def main():
     logging.info("Bot is Online")
     Base.metadata.create_all(engine)
@@ -287,6 +321,7 @@ def main():
     app.add_handler(CommandHandler("release", release_group))
     app.add_handler(CommandHandler("update_link", generate_new_link))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, status_changed))
+    app.add_error_handler(error_handler)
 
     app.run_polling()
 
