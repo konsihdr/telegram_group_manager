@@ -3,8 +3,6 @@
 ## .env
 
 ```python
-API_HASH=
-API_ID=
 BOT_NAME=""
 BOT_TOKEN=
 ADMIN_GROUP=
@@ -25,4 +23,4 @@ docker compose up -d
 
 ## Dev Notes
 
-https://docs.pyrogram.org/
+https://python-telegram-bot.org/
