@@ -239,7 +239,7 @@ async def generate_new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
                 await context.bot.send_message(current_group_id, "✅")
         else:
-            logging.error(f'Invite link update for {group.group_name}.')
+            logging.error(f'Invite link update for {group.group_name} failed.')
             await context.bot.send_message(current_group_id, "❌")
     return
 
@@ -308,7 +308,6 @@ async def error_handler(update: object, context: CallbackContext) -> None:
 
 
 def main():
-    logging.info("Bot is Online")
     Base.metadata.create_all(engine)
 
     app.add_handler(CommandHandler("start", start))
