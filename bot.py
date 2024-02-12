@@ -14,8 +14,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, filte
     CallbackQueryHandler, AIORateLimiter
 from telegram.constants import ParseMode
 
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.ERROR, datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 if os.environ['BOT_TOKEN'] == "":
