@@ -1,9 +1,11 @@
 import datetime
+import os
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-engine = create_engine("sqlite:////db/GROUP_MANAGER.db")
+connection_string = f"mysql+mysqlconnector://{os.environ['DATABASE_USERNAME']}:{os.environ['DATABASE_PASSWORD']}@{os.environ['DATABASE_HOST']}:3306/{os.environ['DATABASE']}"
+engine = create_engine(connection_string)
 
 class Base(DeclarativeBase):
     pass
