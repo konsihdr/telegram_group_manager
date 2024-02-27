@@ -13,7 +13,7 @@ class Base(DeclarativeBase):
 class Groups(Base):
     __tablename__ = "groups"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     group_name: Mapped[str]
     group_id: Mapped[int]
     group_joined: Mapped[datetime.datetime]
