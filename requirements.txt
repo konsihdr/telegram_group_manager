@@ -9,4 +9,4 @@ typing-extensions==4.8.0 ; python_version >= '3.8'
 tzlocal==5.2 ; python_version >= '3.8'
 python-telegram-bot>=20.7
 python-telegram-bot[rate-limiter]==20.7
-mysql-connector-python===8.2.0
+#mysql-connector-python===8.2.0
