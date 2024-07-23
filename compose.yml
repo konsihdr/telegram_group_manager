@@ -1,9 +1,8 @@
-
 services:
   bot:
     #build: .
-    image: ghcr.io/konsihdr/telegram_group_manager:new-group-link
+    image: ghcr.io/konsihdr/telegram_group_manager:latest
     restart: always
     env_file: .env
     volumes:
-      - './db:/db'
+      - "./db:/db"
