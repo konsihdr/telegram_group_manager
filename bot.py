@@ -74,7 +74,7 @@ async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYP
                 s.commit()
                 await context.bot.send_message(
                     admin_group,
-                    f"Neue Gruppe Meldet sich an: {update.effective_chat.title} ({update.effective_chat.id})",
+                    f"Neue Gruppe Meldet sich an: {update.effective_chat.title} ({update.effective_chat.id}) - https://t.me/{update.effective_chat.username}",
                     reply_markup=InlineKeyboardMarkup([[
                         InlineKeyboardButton("Zulassen", callback_data=f'accept+{update.effective_chat.id}'),
                         InlineKeyboardButton("Ablehnen", callback_data=f'decline+{update.effective_chat.id}')
