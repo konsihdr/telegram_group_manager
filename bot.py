@@ -247,8 +247,6 @@ async def generate_new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     except Exception as e:
         logging.error(f'Error in generate_new_link for group {current_group_id}: {str(e)}')
         await context.bot.send_message(current_group_id, "❌ Es gab einen Fehler beim Generieren des Links.")
-        # Optionally, you might want to raise the exception here to trigger the global error handler
-        # raise
 
 
 def is_bot_admin(chat_member: ChatMember):
