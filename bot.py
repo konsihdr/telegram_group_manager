@@ -180,7 +180,9 @@ async def send_group_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         for group in active_groups:
             if group.group_invite_link:
-                reply_text.append(f"· [{group.group_name}]({group.group_invite_link})")
+                escaped_name = html.escape(group.group_name)
+                escaped_link = html.escape(group.group_invite_link)
+                reply_text.append(f"· <a href='{escaped_link}'>{escaped_name}</a>")
 
     formatted_message = "\n".join(reply_text)
 
@@ -193,11 +195,11 @@ async def send_group_list(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         part_message = formatted_message[:split_index]
         formatted_message = formatted_message[split_index + 1:]
         await context.bot.send_message(update.effective_chat.id, part_message, disable_web_page_preview=True,
-                                       parse_mode='Markdown')
+                                       parse_mode=ParseMode.HTML)
 
     # Send the remaining part
     await context.bot.send_message(update.effective_chat.id, formatted_message, disable_web_page_preview=True,
-                                   parse_mode='Markdown')
+                                   parse_mode=ParseMode.HTML)
 
 
 async def release_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
