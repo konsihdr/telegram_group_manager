@@ -222,29 +222,33 @@ async def generate_new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     logging.info('starting generation of link >> generate_new_link')
     current_group_id = update.effective_chat.id  # Get the current group id
 
-    with Session(engine) as s:
-        group = s.query(Groups).filter(Groups.group_id == current_group_id).first()
-        member = await context.bot.get_chat_member(current_group_id, context.bot.id)
-        if member.status == 'administrator':
-            x = await context.bot.export_chat_invite_link(current_group_id)
-            group.group_invite_link = str(x)
-            s.commit()
-            logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
-            await context.bot.send_message(current_group_id, "✅")
-        elif member.status != 'administrator':
-            public_group = await context.bot.get_chat(current_group_id)
-            if public_group.username is None:
-                await context.bot.send_message(current_group_id,
-                                               "Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin rechte.")
-            else:
-                group.group_invite_link = str(f'https://t.me/{public_group.username}')
+    try:
+        with Session(engine) as s:
+            group = s.query(Groups).filter(Groups.group_id == current_group_id).first()
+            if not group:
+                await context.bot.send_message(current_group_id, "Diese Gruppe ist nicht in der Datenbank registriert.")
+                return
+
+            member = await context.bot.get_chat_member(current_group_id, context.bot.id)
+            if member.status == ChatMember.ADMINISTRATOR:
+                invite_link = await context.bot.export_chat_invite_link(current_group_id)
+                group.group_invite_link = str(invite_link)
                 s.commit()
                 logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
-                await context.bot.send_message(current_group_id, "✅")
-        else:
-            logging.error(f'Invite link update for {group.group_name} failed.')
-            await context.bot.send_message(current_group_id, "❌")
-    return
+                await context.bot.send_message(current_group_id, "✅ Neuer Einladungslink wurde generiert.")
+            else:
+                public_group = await context.bot.get_chat(current_group_id)
+                if public_group.username:
+                    group.group_invite_link = f'https://t.me/{public_group.username}'
+                    s.commit()
+                    logging.info(f'Invite link updated for {group.group_name}. New link: {group.group_invite_link}')
+                    await context.bot.send_message(current_group_id, "✅ Gruppenlink wurde aktualisiert.")
+                else:
+                    await context.bot.send_message(current_group_id,
+                                                   "Um einen Link für deine Gruppe zu erzeugen, benötige ich Admin-Rechte.")
+    except Exception as e:
+        logging.error(f'Error in generate_new_link for group {current_group_id}: {str(e)}')
+        await context.bot.send_message(current_group_id, "❌ Es gab einen Fehler beim Generieren des Links.")
 
 
 def is_bot_admin(chat_member: ChatMember):
