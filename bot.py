@@ -172,7 +172,7 @@ async def bot_to_group_check(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def send_group_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    reply_text = ["**🌟 Aktiven Gruppen Liste 🌟**\n"]
+    reply_text = ["🌟 Aktiven Gruppen Liste 🌟\n"]
 
     with Session(engine) as s:
         active_groups = s.query(Groups).filter(
