@@ -168,6 +168,25 @@ async def bot_to_group_check(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         await context.bot.answer_callback_query(query.id, text="Gruppe wurde freigegeben")
         logging.info(f'group released from {query.from_user.id}')
+
+    if answer == "delete":
+        with Session(engine) as s:
+            result = s.query(Groups).filter_by(group_id=group_query).first()
+            if result:
+                results.group_deleted = True
+                results.group_active = False
+                s.commit()
+        reply_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Released", callback_data="ok")]])
+
+        await context.bot.edit_message_reply_markup(
+            chat_id=query.message.chat.id,
+            message_id=query.message.message_id,
+            reply_markup=reply_markup
+        )
+        await context.bot.answer_callback_query(query.id, text="Gruppe wurde Gelöscht und blockiert")
+        logging.info(f'group deleted from {query.from_user.id}')
+
     return
 
 
@@ -213,6 +232,22 @@ async def release_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await context.bot.send_message(
         admin_group,
         "Welche Gruppe möchtest du freigeben?",
+        reply_markup=InlineKeyboardMarkup(keyboardMarkup)
+    )
+    return
+
+
+async def delete_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboardMarkup = []
+    with Session(engine) as s:
+        deleted_groups = s.query(Groups).filter(Groups.group_active).all()
+        for group in deleted_groups:
+            keyboardMarkup.append(
+                [InlineKeyboardButton(f"{group.group_name}", callback_data=f'delete+{group.group_id}')])
+
+    await context.bot.send_message(
+        admin_group,
+        "Welche Gruppe möchtest du löschen?",
         reply_markup=InlineKeyboardMarkup(keyboardMarkup)
     )
     return
@@ -324,6 +359,7 @@ def main():
     app.add_handler(CommandHandler("group_list", send_group_list))
     app.add_handler(CallbackQueryHandler(bot_to_group_check))
     app.add_handler(CommandHandler("release", release_group))
+    app.add_handler(CommandHandler("delete", delete_group))
     app.add_handler(CommandHandler("update_link", generate_new_link))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, status_changed))
     app.add_error_handler(error_handler)
