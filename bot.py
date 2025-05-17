@@ -177,13 +177,8 @@ async def bot_to_group_check(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 results.group_active = False
                 s.commit()
         reply_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Released", callback_data="ok")]])
+            [[InlineKeyboardButton("Deleted", callback_data="ok")]])
 
-        await context.bot.edit_message_reply_markup(
-            chat_id=query.message.chat.id,
-            message_id=query.message.message_id,
-            reply_markup=reply_markup
-        )
         await context.bot.answer_callback_query(query.id, text="Gruppe wurde Gelöscht und blockiert")
         logging.info(f'group deleted from {query.from_user.id}')
 
