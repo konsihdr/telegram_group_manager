@@ -65,7 +65,8 @@ async def me_invited_or_joined(update: Update, context: ContextTypes.DEFAULT_TYP
                                                     f"die {update.effective_chat.id}")
                     await context.bot.leave_chat(update.effective_chat.id)
                     return
-                if not group.group_deleted:
+                else:
+                    # Group exists and is not deleted, nothing to do
                     return
             else:
                 new_group = Groups(group_name=update.effective_chat.title, group_id=update.effective_chat.id,
@@ -355,12 +356,12 @@ def main():
     app.add_handler(CommandHandler("status", bot_status))
     app.add_handler(CommandHandler('id', get_chat_id))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, me_invited_or_joined))
+    app.add_handler(MessageHandler(filters.ChatMemberUpdated.MY_CHAT_MEMBER, status_changed))
     app.add_handler(CommandHandler("group_list", send_group_list))
     app.add_handler(CallbackQueryHandler(bot_to_group_check))
     app.add_handler(CommandHandler("release", release_group))
     app.add_handler(CommandHandler("delete", delete_group))
     app.add_handler(CommandHandler("update_link", generate_new_link))
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, status_changed))
     app.add_error_handler(error_handler)
 
     app.run_polling()
