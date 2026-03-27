@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sql import Base, Groups, engine
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, filters, CallbackContext, MessageHandler, \
-    CallbackQueryHandler, AIORateLimiter
+    CallbackQueryHandler, AIORateLimiter, ChatMemberHandler
 from telegram.constants import ParseMode
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -356,7 +356,7 @@ def main():
     app.add_handler(CommandHandler("status", bot_status))
     app.add_handler(CommandHandler('id', get_chat_id))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, me_invited_or_joined))
-    app.add_handler(MessageHandler(filters.ChatMemberUpdated.MY_CHAT_MEMBER, status_changed))
+    app.add_handler(ChatMemberHandler(status_changed, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(CommandHandler("group_list", send_group_list))
     app.add_handler(CallbackQueryHandler(bot_to_group_check))
     app.add_handler(CommandHandler("release", release_group))
